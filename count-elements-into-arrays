@@ -1,0 +1,23 @@
+db.academicCenters.aggregate([
+    {
+        $lookup: {
+            from: "careers",
+            localField: "_id",
+            foreignField: "idAcademicCenter",
+            as: "nrocareers"
+        }
+    },
+    {
+        $project: {
+            "_id": 1,
+            "name": 1,
+            "nroCareers": {
+                $cond: {
+                    if: { $isArray: "$nrocareers" },
+                    then: { $size: "$nrocareers" },
+                    else: 0,
+                }
+            }
+        }
+    }
+])
