@@ -1,0 +1,43 @@
+db.signals.aggregate([
+    {
+		"$match": {
+			"_id": ObjectId("5f570ef20e65c35730b20cb2"),
+		},
+	},
+	{
+		"$unwind": "$histories",
+	},
+	{
+		"$match": {
+			"histories._id": ObjectId("5f582fe4df289d7505f9a037"),
+		},
+	},
+	{
+		"$project": {
+			"_id":         "$histories._id",
+			"renewalDate": "$histories.renewalDate",
+			"state":       "$histories.state",
+			"description": "$histories.description",
+			"removed":     "$histories.removed",
+			"photos":      "$histories.photos",
+		},
+	},
+	{
+    	"$project": {
+    	    "_id":         1,
+			"renewalDate": 1,
+			"state":       1,
+			"description": 1,
+			"removed":     1,
+    		"photos": {
+    			"$filter": {
+    				"input": "$photos",
+    				"as":    "photo",
+    				"cond": {
+    					"$eq": ["$$photo.removed", false],
+    				},
+    			},
+    		},
+    	},
+    },
+])

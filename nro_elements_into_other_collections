@@ -1,0 +1,146 @@
+db.scholars.aggregate([
+    {
+        $facet:{
+            benefits:[
+                {
+                    $match: {
+                        "_id": ObjectId("608b6533ffb190d55f98b60e")
+                    },
+                },
+                {
+                    $lookup: {
+                        from: "benefits",
+                        localField: "_id",
+                        foreignField: "idScholar",
+                        as: "nrocareers"
+                    }
+                },
+                {
+                    $project: {
+                        "_id": 0,
+                        "total": {
+                            $cond: {
+                                if: { $isArray: "$nrocareers" },
+                                then: { $size: "$nrocareers" },
+                                else: 0,
+                            }
+                        }
+                    }
+                }
+            ],
+            pendings:[
+                {
+                    $match: {
+                        "_id": ObjectId("608b6533ffb190d55f98b60e")
+                    },
+                },
+                {
+                    $lookup: {
+                        from: "pendings",
+                        localField: "_id",
+                        foreignField: "idScholar",
+                        as: "nrocareers"
+                    }
+                },
+                {
+                    $project: {
+                        "_id": 0,
+                        "total": {
+                            $cond: {
+                                if: { $isArray: "$nrocareers" },
+                                then: { $size: "$nrocareers" },
+                                else: 0,
+                            }
+                        }
+                    }
+                }
+            ],
+            disbursements:[
+                {
+                    $match: {
+                        "_id": ObjectId("608b6533ffb190d55f98b60e")
+                    },
+                },
+                {
+                    $lookup: {
+                        from: "disbursements",
+                        localField: "_id",
+                        foreignField: "idScholar",
+                        as: "nrocareers"
+                    }
+                },
+                {
+                    $project: {
+                        "_id": 0,
+                        "total": {
+                            $cond: {
+                                if: { $isArray: "$nrocareers" },
+                                then: { $size: "$nrocareers" },
+                                else: 0,
+                            }
+                        }
+                    }
+                }
+            ],
+        }
+    },
+    {
+        $project: {
+            "array": {
+                $concatArrays: ["$benefits", "$pendings", "$disbursements"]
+            }
+        },
+    },
+    {
+        $project: {
+        "nro": {
+                $sum: "$array.total",
+            }
+        },
+    },
+
+    // {
+    //     $unwind: "$array"
+    // },
+    // {
+    //     $project: {
+    //         "benefits": "$array.benefits",
+    //         "pendings": "$array.pendings",
+    //         "disbursements": "$array.disbursements",
+    //         // "nro": {
+    //         //     $sum: ["$array.benefits", "$array.pendings", "$array.disbursements"]
+    //         // }
+    //     },
+    // },
+    // {
+    //     $unwind: "$benefits"
+    // }
+    // {
+    //     $group:{
+    //         _id: "$array._id",
+    //         "ex": {
+    //             $sum: "$array.benefits"
+    //         },
+    //         "sh": {
+    //             $sum: "$array.GDS"
+    //         },
+    //     }
+    // },
+    // {
+    //     $addFields: {
+    //         "flag": {$multiply:[ "$sh", 0.85]},
+    //     }
+    // },
+    // {
+    //     $project: {
+    //         "value": {
+    //             $switch: {
+    //                 branches: [
+    //                     { case: {$gte: ["$ex","$flag"]}, then: "PL" },
+    //                 ],
+    //                 default: "AT"
+    //             }
+    //         }
+    //     }
+    // }
+])

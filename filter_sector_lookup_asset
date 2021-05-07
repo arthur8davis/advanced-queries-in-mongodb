@@ -1,0 +1,57 @@
+db.sectors.aggregate([
+    {
+        $match: {
+            "concession": ObjectID("5f3ae5a216e1710ed4b6c473"),
+        }
+    },
+    {
+        "$lookup": {
+            "from": "assets",
+            "let": {
+                "idSector": "$_id",
+            },
+            "pipeline": [
+                {
+                    "$match": {
+                        "$expr": {
+                            "$eq": ["$$idSector", "$idSector"],
+                        },
+                    },
+                },
+                
+                {
+                    $group:{
+                        "_id": "$state",
+                        "count": {$sum: 1}
+                    }
+                },
+                { $addFields: { array: [{ k: "$_id", v: "$count"}] }},
+                { $replaceRoot: { newRoot: { $arrayToObject: "$array" }}},
+                {
+                    $group:{
+                        "_id": null,
+                        "result": {$mergeObjects: {
+                            Bueno: "$Bueno",
+                            Regular: "$Regular",
+                            Malo: "$Malo"
+                        }},
+                    }
+                },
+                {
+                    $project: { _id: 0, Bueno: "$result.Bueno", Regular: "$result.Regular",Malo: "$result.Malo",}
+                }
+            ],
+            "as": "data",
+        },
+    },
+    {
+        "$project": {
+            "_id": 1,
+            "name": 1,
+            "code": 1,
+            "Bueno": { "$ifNull": [{ "$arrayElemAt": ["$data.Bueno", 0] }, 0 ]},
+            "Malo": { "$ifNull": [{ "$arrayElemAt": ["$data.Malo", 0] }, 0 ]},
+            "Regular": { "$ifNull": [{ "$arrayElemAt": ["$data.Regular", 0] }, 0 ]},
+        }
+    }
+])

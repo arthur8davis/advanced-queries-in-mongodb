@@ -1,0 +1,71 @@
+db.projects.aggregate([
+    { "$unwind": {"path":"$annualExecutions", "preserveNullAndEmptyArrays": true}},
+    { "$project": {"annualExecutions": 1} },
+    { "$match": {"annualExecutions.year": 2020} },
+    { "$project": { "months": [ "$annualExecutions.before", "$annualExecutions.jan", "$annualExecutions.feb", "$annualExecutions.oct", "$annualExecutions.nov", "$annualExecutions.dec"] } },
+    {
+        $project: {
+            "CDFis": {"$sum": "$months.CDFis"},
+            "roundFis": {"$sum": "$months.roundFis"},
+            "MM": {
+                $sum: {
+                    $reduce: {
+                        input: "$months.MM",
+                        initialValue: [],
+                        in: { $concatArrays: ["$$value", "$$this"] }
+                    }
+                },
+            },
+            "PN": {
+                $sum: {
+                    $reduce: {
+                        input: "$months.PN",
+                        initialValue: [],
+                        in: { $concatArrays: ["$$value", "$$this"] }
+                    }
+                },
+            },
+            "DD": {
+                $sum: {
+                    $reduce: {
+                        input: "$months.DD",
+                        initialValue: [],
+                        in: { $concatArrays: ["$$value", "$$this"] }
+                    }
+                },
+            },
+            "CDFin": {"$sum": "$months.CDFin"},
+            "GG": {"$sum": "$months.GG"},
+            "GS": {"$sum": "$months.GS"},
+            "GET": {"$sum": "$months.GET"},
+            "GLT": {"$sum": "$months.GLT"},
+            "OG": {"$sum": "$months.OG"},
+            "roundFin": {"$sum": "$months.roundFin"},
+            
+        }
+    },
+    {
+        $project: {
+            "AFin": {
+                $add: [
+                    "$CDFin",
+                    "$GG",
+                    "$GS",
+                    "$GET",
+                    "$GLT",
+                    "$OG",
+                    "$roundFin",
+                ]
+            },
+            "AFis": {
+                $add: [
+                    "$CDFis",
+                    "$roundFis",
+                    "$MM",
+                    "$PN",
+                    "$DD",
+                ]
+            },
+        }
+    }
+])

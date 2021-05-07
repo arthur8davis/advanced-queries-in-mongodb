@@ -1,0 +1,597 @@
+package services
+
+import (
+	"../../core"
+	servicesCore "../../core/services"
+	"../../db"
+	"../models"
+	"context"
+	"github.com/graphql-go/graphql"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"time"
+)
+
+func ResolveIndicatorsArgs(params graphql.ResolveParams) (*models.IndicatorFilters, error) {
+	filter := models.IndicatorFilters{}
+	idProvince_, hasIdProvince := params.Args["idProvince"].(string)
+	if hasIdProvince {
+		if idProvinceTemp, err := primitive.ObjectIDFromHex(idProvince_); err == nil {
+			filter.HasProvince = true
+			filter.IdProvince = &idProvinceTemp
+		} else {
+			return nil, err
+		}
+	}
+	idDistrict_, hasIdDistrict := params.Args["idDistrict"].(string)
+	if hasIdDistrict {
+		if idDistrictTemp, err := primitive.ObjectIDFromHex(idDistrict_); err == nil {
+			filter.HasDistrict = true
+			filter.IdDistrict = &idDistrictTemp
+		} else {
+			return nil, err
+		}
+	}
+	idExeUnit_, hasIdExeUnit := params.Args["idExeUnit"].(string)
+	if hasIdExeUnit {
+		if idExeUnitTemp, err := primitive.ObjectIDFromHex(idExeUnit_); err == nil {
+			filter.HasExeUnit = true
+			filter.IdExeUnit = &idExeUnitTemp
+		} else {
+			return nil, err
+		}
+	}
+	idSector_, hasIdSector := params.Args["idSector"].(string)
+	if hasIdSector {
+		if idSectorTemp, err := primitive.ObjectIDFromHex(idSector_); err == nil {
+			filter.HasSector = true
+			filter.IdSector = &idSectorTemp
+		} else {
+			return nil, err
+		}
+	}
+	filter.Year, filter.HasYear = params.Args["year"].(int)
+	filter.Month, filter.HasMonth = params.Args["month"].(string)
+	filter.Choice = params.Args["choice"].(string)
+	return &filter, nil
+}
+
+func ResolveIndicators(params graphql.ResolveParams) ([]models.Indicator, error) {
+	filterIndicators, err := ResolveIndicatorsArgs(params)
+	if err != nil {
+		return nil, err
+	}
+	user, err := servicesCore.GetUserFromContext(params.Context)
+	if err != nil {
+		return nil, err
+	}
+	rolesMap, err := servicesCore.GetRolesOfUserMap(user.Roles)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := (*rolesMap)[models.RoleSuper]; ok {
+		// super
+		indicators, err := GetIndicators(*filterIndicators)
+		if err != nil {
+			return nil, err
+		}
+		return indicators, nil
+	} else if _, ok := (*rolesMap)[models.RoleOT]; ok {
+		// ot
+		indicators, err := GetIndicators(*filterIndicators)
+		if err != nil {
+			return nil, err
+		}
+		return indicators, nil
+	} else if _, ok := (*rolesMap)[models.RoleAnalyst]; ok {
+		// analyst
+		indicators, err := GetIndicators(*filterIndicators)
+		if err != nil {
+			return nil, err
+		}
+		return indicators, nil
+	} else {
+		return nil, core.ErrorNotPermission
+	}
+}
+
+func GetIndicators(filterIndicators models.IndicatorFilters) ([]models.Indicator, error) {
+	conf, err := GetConf()
+	c, errC := db.GetCollection(colProject)
+	if errC != nil {
+		return nil, errC
+	}
+	filter := bson.M{}
+	if filterIndicators.HasProvince {
+		filter["location.idProvince"] = *filterIndicators.IdProvince
+	}
+	if filterIndicators.HasDistrict {
+		filter["location.idDistrict"] = *filterIndicators.IdDistrict
+	}
+	if filterIndicators.HasExeUnit {
+		filter["idExeUnit"] = *filterIndicators.IdExeUnit
+	}
+	if filterIndicators.HasSector {
+		filter["idSector"] = *filterIndicators.IdSector
+	}
+	pipeline := bson.A{bson.D{{"$match", filter}}}
+	idMonths := [13]string{"before", "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"}
+	var monthsToCalc []interface{}
+	var month = 0
+	for iMonth, m := range idMonths {
+		if m == filterIndicators.Month {
+			month = iMonth
+			break
+		}
+		monthsToCalc = append(monthsToCalc, "$annualExecutions."+m)
+	}
+	var indicators []models.Indicator
+	switch filterIndicators.Choice {
+	case "Plazo":
+		pipeline = append(pipeline, buildPipelineIndicatorTerm(month, conf.ThrTerm)...)
+	case "Programado":
+		pipeline = append(pipeline, buildPipelineIndicatorSchedule(monthsToCalc, conf.ThrProgram)...)
+	case "General":
+		pipeline = append(pipeline, buildPipelineIndicatorGeneralExpenses(monthsToCalc)...)
+	case "Supervision":
+		pipeline = append(pipeline, buildPipelineIndicatorSupervisionExpenses(monthsToCalc)...)
+	case "PhyFin":
+		pipeline = append(pipeline, buildPipelinePhysicalFinance(monthsToCalc)...)
+	}
+	cursor, err := c.Aggregate(context.TODO(), pipeline)
+	if err != nil {
+		return nil, err
+	}
+	err = cursor.All(context.TODO(), &indicators)
+	if err != nil {
+		return nil, err
+	}
+	return indicators, errC
+}
+
+func buildPipelineIndicatorTerm(monthMax int, perIndicator float64) bson.A {
+	per := 1.0 - (perIndicator / 100)
+	return bson.A{
+		bson.D{{"$unwind", bson.M{"path": "$periodExtensions", "preserveNullAndEmptyArrays": true}}},
+		bson.D{{
+			"$project", bson.M{
+				"datePeriod": bson.M{
+					"$cond": bson.M{
+						"if": bson.M{
+							"$lte": []interface{}{bson.M{"$month": "$periodExtensions.dateOfApplication"}, monthMax},
+						},
+						"then": "$periodExtensions.days",
+						"else": 0,
+					},
+				},
+				"executionTime": 1,
+			},
+		}},
+		bson.D{{
+			"$group", bson.M{
+				"_id":           "$_id",
+				"executionTime": bson.M{"$first": "$executionTime"},
+				"daysPeriod":    bson.M{"$sum": "$datePeriod"},
+			},
+		}},
+		bson.D{{
+			"$project", bson.M{
+				"days": bson.M{
+					"$add": []interface{}{
+						bson.M{
+							"$divide": []interface{}{
+								bson.M{
+									"$subtract": []interface{}{"$executionTime.begin", time.Now()},
+								}, 86400000},
+						},
+						"$daysPeriod",
+						"$executionTime.days",
+					},
+				},
+				"daysLimit": bson.M{
+					"$multiply": bson.A{
+						bson.M{"$add": []interface{}{"$daysPeriod", "$executionTime.days"}},
+						per,
+					},
+				},
+			},
+		}},
+		bson.D{{
+			"$project", bson.M{
+				"_id": 1,
+				"value": bson.M{
+					"$switch": bson.M{
+						"branches": []bson.M{
+							{
+								"case": bson.M{
+									"$and": []bson.M{
+										{"$gte": []interface{}{"$days", 1}},
+										{"$lt": []interface{}{"$days", "$daysLimit"}},
+									},
+								},
+								"then": "APC",
+							},
+							{
+								"case": bson.M{
+									"$gt": []interface{}{"$days", "$daysLimit"},
+								},
+								"then": "DPL",
+							},
+						},
+						"default": "FPL",
+					},
+				},
+			},
+		}},
+	}
+}
+
+func buildPipelineIndicatorSchedule(monthsToCalc []interface{}, perIndicator float64) bson.A {
+	per := 1.0 - (perIndicator / 100)
+	executed := bson.A{
+		bson.D{{"$unwind", bson.M{"path": "$annualExecutions", "preserveNullAndEmptyArrays": true}}},
+		bson.D{{"$project", bson.M{"annualExecutions": 1}}},
+		bson.D{{"$match", bson.M{"annualExecutions.year": 2020}}},
+		bson.D{{"$project", bson.M{"months": monthsToCalc}}},
+		bson.D{{
+			"$project", bson.M{
+				"MM": bson.M{
+					"$sum": bson.M{
+						"$reduce": bson.M{
+							"input":        "$months.MM",
+							"initialValue": []interface{}{},
+							"in": bson.M{
+								"$concatArrays": []interface{}{"$$value", "$$this"},
+							},
+						},
+					},
+				},
+				"PN": bson.M{
+					"$sum": bson.M{
+						"$reduce": bson.M{
+							"input":        "$months.PN",
+							"initialValue": []interface{}{},
+							"in": bson.M{
+								"$concatArrays": []interface{}{"$$value", "$$this"},
+							},
+						},
+					},
+				},
+				"DD": bson.M{
+					"$sum": bson.M{
+						"$reduce": bson.M{
+							"input":        "$months.DD",
+							"initialValue": []interface{}{},
+							"in": bson.M{
+								"$concatArrays": []interface{}{"$$value", "$$this"},
+							},
+						},
+					},
+				},
+				"CDFis": bson.M{"$sum": "$months.CDFis"},
+			},
+		}},
+		bson.D{{
+			"$project", bson.M{
+				"GDE": bson.M{
+					"$add": []interface{}{"$CDFis", "$MM", "$PN", "$DD"},
+				},
+			},
+		}},
+	}
+	schedule := bson.A{
+		bson.D{{"$unwind", bson.M{"path": "$annualSchedules", "preserveNullAndEmptyArrays": true}}},
+		bson.D{{"$project", bson.M{"annualSchedules": 1}}},
+		bson.D{{"$match", bson.M{"annualSchedules.year": 2020}}},
+		bson.D{{"$project", bson.M{"months": monthsToCalc}}},
+		bson.D{{
+			"$project", bson.M{
+				"MM": bson.M{
+					"$sum": bson.M{
+						"$reduce": bson.M{
+							"input":        "$months.MM",
+							"initialValue": []interface{}{},
+							"in": bson.M{
+								"$concatArrays": []interface{}{"$$value", "$$this"},
+							},
+						},
+					},
+				},
+				"PN": bson.M{
+					"$sum": bson.M{
+						"$reduce": bson.M{
+							"input":        "$months.PN",
+							"initialValue": []interface{}{},
+							"in": bson.M{
+								"$concatArrays": []interface{}{"$$value", "$$this"},
+							},
+						},
+					},
+				},
+				"DD": bson.M{
+					"$sum": bson.M{
+						"$reduce": bson.M{
+							"input":        "$months.DD",
+							"initialValue": []interface{}{},
+							"in": bson.M{
+								"$concatArrays": []interface{}{"$$value", "$$this"},
+							},
+						},
+					},
+				},
+				"CDFis": bson.M{"$sum": "$months.CDFis"},
+			},
+		}},
+		bson.D{{
+			"$project", bson.M{
+				"GDS": bson.M{
+					"$add": []interface{}{"$CDFis", "$MM", "$PN", "$DD"},
+				},
+			},
+		}},
+	}
+	return bson.A{
+		bson.D{{"$facet", bson.D{{"executed", executed}, {"schedule", schedule}}}},
+		bson.D{{
+			"$project", bson.M{
+				"array": bson.M{
+					"$concatArrays": []interface{}{"$executed", "$schedule"},
+				},
+			},
+		}},
+		bson.D{{"$unwind", "$array"}},
+		bson.D{{
+			"$group", bson.M{
+				"_id": "$array._id",
+				"ex": bson.M{
+					"$sum": "$array.GDE",
+				},
+				"sh": bson.M{
+					"$sum": "$array.GDS",
+				},
+			},
+		}},
+		bson.D{{
+			"$addFields", bson.M{
+				"flag": bson.M{
+					"$multiply": bson.A{"$sh", per},
+				},
+			},
+		}},
+		bson.D{{
+			"$project", bson.M{
+				"_id": 1,
+				"value": bson.M{
+					"$switch": bson.M{
+						"branches": []bson.M{
+							{
+								"case": bson.M{
+									"$gte": []interface{}{"$ex", "$flag"},
+								},
+								"then": "PL",
+							},
+						},
+						"default": "AT",
+					},
+				},
+			},
+		}},
+	}
+}
+
+func buildPipelineIndicatorGeneralExpenses(monthsToCalc []interface{}) bson.A {
+	executed := bson.A{
+		bson.D{{"$unwind", bson.M{"path": "$annualExecutions", "preserveNullAndEmptyArrays": true}}},
+		bson.D{{"$project", bson.M{"annualExecutions": 1}}},
+		bson.D{{"$match", bson.M{"annualExecutions.year": 2020}}},
+		bson.D{{"$project", bson.M{"months": monthsToCalc}}},
+		bson.D{{
+			"$project", bson.M{
+				"GGE": bson.M{"$sum": "$months.GG"},
+			},
+		}},
+	}
+	schedule := bson.A{
+		bson.D{{"$unwind", bson.M{"path": "$annualSchedules", "preserveNullAndEmptyArrays": true}}},
+		bson.D{{"$project", bson.M{"annualSchedules": 1}}},
+		bson.D{{"$match", bson.M{"annualSchedules.year": 2020}}},
+		bson.D{{"$project", bson.M{"months": monthsToCalc}}},
+		bson.D{{
+			"$project", bson.M{
+				"GGS": bson.M{"$sum": "$months.GG"},
+			},
+		}},
+	}
+	return bson.A{
+		bson.D{{"$facet", bson.D{{"executed", executed}, {"schedule", schedule}}}},
+		bson.D{{
+			"$project", bson.M{
+				"array": bson.M{
+					"$concatArrays": []interface{}{"$executed", "$schedule"},
+				},
+			},
+		}},
+		bson.D{{"$unwind", "$array"}},
+		bson.D{{
+			"$group", bson.M{
+				"_id": "$array._id",
+				"ex": bson.M{
+					"$sum": "$array.GGE",
+				},
+				"sh": bson.M{
+					"$sum": "$array.GGS",
+				},
+			},
+		}},
+		bson.D{{
+			"$project", bson.M{
+				"_id": 1,
+				"value": bson.M{
+					"$switch": bson.M{
+						"branches": []bson.M{
+							{
+								"case": bson.M{
+									"$gt": []interface{}{"$ex", "$sh"},
+								},
+								"then": "GGSP", // gasto general superior a lo programado
+							},
+							{
+								"case": bson.M{
+									"$lt": []interface{}{"$ex", "$sh"},
+								},
+								"then": "GGDP",
+							},
+						},
+						"default": "GGIP",
+					},
+				},
+			},
+		}},
+	}
+}
+
+func buildPipelineIndicatorSupervisionExpenses(monthsToCalc []interface{}) bson.A {
+	executed := bson.A{
+		bson.D{{"$unwind", bson.M{"path": "$annualExecutions", "preserveNullAndEmptyArrays": true}}},
+		bson.D{{"$project", bson.M{"annualExecutions": 1}}},
+		bson.D{{"$match", bson.M{"annualExecutions.year": 2020}}},
+		bson.D{{"$project", bson.M{"months": monthsToCalc}}},
+		bson.D{{
+			"$project", bson.M{
+				"GSE": bson.M{"$sum": "$months.GS"},
+			},
+		}},
+	}
+	schedule := bson.A{
+		bson.D{{"$unwind", bson.M{"path": "$annualSchedules", "preserveNullAndEmptyArrays": true}}},
+		bson.D{{"$project", bson.M{"annualSchedules": 1}}},
+		bson.D{{"$match", bson.M{"annualSchedules.year": 2020}}},
+		bson.D{{"$project", bson.M{"months": monthsToCalc}}},
+		bson.D{{
+			"$project", bson.M{
+				"GSS": bson.M{"$sum": "$months.GS"},
+			},
+		}},
+	}
+	return bson.A{
+		bson.D{{"$facet", bson.D{{"executed", executed}, {"schedule", schedule}}}},
+		bson.D{{
+			"$project", bson.M{
+				"array": bson.M{
+					"$concatArrays": []interface{}{"$executed", "$schedule"},
+				},
+			},
+		}},
+		bson.D{{"$unwind", "$array"}},
+		bson.D{{
+			"$group", bson.M{
+				"_id": "$array._id",
+				"ex": bson.M{
+					"$sum": "$array.GSE",
+				},
+				"sh": bson.M{
+					"$sum": "$array.GSS",
+				},
+			},
+		}},
+		bson.D{{
+			"$project", bson.M{
+				"_id": 1,
+				"value": bson.M{
+					"$switch": bson.M{
+						"branches": []bson.M{
+							{
+								"case": bson.M{
+									"$gt": []interface{}{"$ex", "$sh"},
+								},
+								"then": "GSSP", // gasto de supervision superior a lo programado
+							},
+							{
+								"case": bson.M{
+									"$lt": []interface{}{"$ex", "$sh"},
+								},
+								"then": "GSDP",
+							},
+						},
+						"default": "GSIP",
+					},
+				},
+			},
+		},
+		}}
+}
+
+func buildPipelinePhysicalFinance(monthsToCalc []interface{}) bson.A {
+	return bson.A{
+		bson.M{"$unwind": bson.M{"path": "$annualExecutions", "preserveNullAndEmptyArrays": true}},
+		bson.M{"$project": bson.M{"annualExecutions": 1}},
+		bson.M{"$match": bson.M{"annualExecutions.year": 2020}},
+		bson.M{"$project": bson.M{"months": monthsToCalc}},
+		bson.M{
+			"$project": bson.M{
+				"MM": bson.M{
+					"$sum": bson.M{
+						"$reduce": bson.M{
+							"input":        "$months.MM",
+							"initialValue": []interface{}{},
+							"in": bson.M{
+								"$concatArrays": []interface{}{"$$value", "$$this"},
+							},
+						},
+					},
+				},
+				"PN": bson.M{
+					"$sum": bson.M{
+						"$reduce": bson.M{
+							"input":        "$months.PN",
+							"initialValue": []interface{}{},
+							"in": bson.M{
+								"$concatArrays": []interface{}{"$$value", "$$this"},
+							},
+						},
+					},
+				},
+				"DD": bson.M{
+					"$sum": bson.M{
+						"$reduce": bson.M{
+							"input":        "$months.DD",
+							"initialValue": []interface{}{},
+							"in": bson.M{
+								"$concatArrays": []interface{}{"$$value", "$$this"},
+							},
+						},
+					},
+				},
+				"CDFis": bson.M{"$sum": "$months.CDFis"},
+				"CDFin": bson.M{"$sum": "$months.CDFin"},
+			},
+		},
+		bson.M{
+			"$project": bson.M{
+				"phys": bson.M{
+					"$add": []interface{}{"$CDFis", "$MM", "$PN", "$DD"},
+				},
+				"fin": "$CDFin",
+			},
+		},
+		bson.M{
+			"$project": bson.M{
+				"_id": 1,
+				"value": bson.M{
+					"$switch": bson.M{
+						"branches": []bson.M{
+							{
+								"case": bson.M{
+									"$gte": []interface{}{"$ex", "$phys"},
+								},
+								"then": "FSP", // financiero superior a phys
+							},
+						},
+						"default": "FIP",
+					},
+				},
+			},
+		},
+	}
+}
+

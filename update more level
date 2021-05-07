@@ -1,0 +1,20 @@
+db.signals.update(
+    {_id : ObjectId("5f3da04424dd3eb840fd60b5")},
+    {
+        $set: {
+            "histories.$[history].photos.$[photo].description": "xxxxxx"
+        }
+    },
+    {
+        arrayFilters: [{
+            "history._id" : {
+                $eq: ObjectId("5f3de9a462585b74bd97f37f")
+            }
+        }, {
+            "photo._id" : {
+                $eq: ObjectId("5f3ff9385ed7711e0f2594f9")
+            }
+        }],
+        multi: false
+    }
+) 

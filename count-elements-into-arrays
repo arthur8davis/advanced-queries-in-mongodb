@@ -1,5 +1,10 @@
 db.academicCenters.aggregate([
     {
+        $match: {
+            "_id": ObjectId("608b6487ffb190d55f98b5b8")
+        },
+    },
+    {
         $lookup: {
             from: "careers",
             localField: "_id",
@@ -9,8 +14,8 @@ db.academicCenters.aggregate([
     },
     {
         $project: {
-            "_id": 1,
-            "name": 1,
+            "_id": 0,
+            // "name": 1,
             "nroCareers": {
                 $cond: {
                     if: { $isArray: "$nrocareers" },

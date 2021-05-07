@@ -1,0 +1,229 @@
+db.projects.aggregate([
+    {
+		"$match": {
+			"_id": ObjectId("5f9ad4588683e45ae4677a3c"),
+		},
+	},
+     {
+         $facet:{
+            executed:[
+            	{
+            		"$unwind": "$annualExecutions",
+            	},
+            	{
+            		"$project": {"annualExecutions": 1},
+            	},
+            	{
+            		"$match": {"annualExecutions.year": 2020},
+            	},
+            	{
+            	    "$project": {
+                        "months": [ "$annualExecutions.before", "$annualExecutions.jan", "$annualExecutions.feb", "$annualExecutions.oct", "$annualExecutions.nov"],
+                    }
+            	},
+            	{
+                    "$addFields": {
+                        "MME": {
+                            "$reduce": {
+                                "input": "$months.MM",
+                                "initialValue": [],
+                                "in": {
+                                    "$map": {
+                                        "input": {
+                                            "$zip": {
+                                                "inputs": ["$$this", "$$value"],
+                                                "useLongestLength": true,
+                                            }
+                                        },
+                                        "in": { "$sum": "$$this"}
+                                    }
+                                }
+                            }
+                        },
+                        "PNE": {
+                            "$reduce": {
+                                "input": "$months.PN",
+                                "initialValue": [],
+                                "in": {
+                                    "$map": {
+                                        "input": {
+                                            "$zip": {
+                                                "inputs": ["$$this", "$$value"],
+                                                "useLongestLength": true,
+                                            }
+                                        },
+                                        "in": { "$sum": "$$this"}
+                                    }
+                                }
+                            }
+                        },
+                        "DDE": {
+                            "$reduce": {
+                                "input": "$months.DD",
+                                "initialValue": [],
+                                "in": {
+                                    "$map": {
+                                        "input": {
+                                            "$zip": {
+                                                "inputs": ["$$this", "$$value"],
+                                                "useLongestLength": true,
+                                            }
+                                        },
+                                        "in": { "$sum": "$$this"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+            	{
+            	    "$project": {
+                        "CDFin": {"$sum": "$months.CDFin"},
+                        "GG": {"$sum": "$months.GG"},
+                        "GS": {"$sum": "$months.GS"},
+                        "GE": {"$sum": "$months.GE"},
+                        "OG": {"$sum": "$months.OG"},
+                        "GLT": {"$sum": "$months.GLT"},
+                        "GET": {"$sum": "$months.GET"},
+                        "MM": {$sum: "$MM"},
+                        "PN": {$sum: "$PN"},
+                        "DD": {$sum: "$DD"},
+                    }
+            	},
+            	{
+            	    $project: {
+            	        "GD": {
+            	            $add: [
+               	                "$CDFin",
+            	                "$MM",
+            	                "$PN",
+            	                "$DD",
+            	                500
+            	           ]
+            	        },
+            	   }
+            	}
+            ],
+            schedule:[
+            	{
+            		"$unwind": "$annualSchedules",
+            	},
+            	{
+            		"$project": {"annualSchedules": 1},
+            	},
+            	{
+            		"$match": {"annualSchedules.year": 2020},
+            	},
+            	{
+            	    "$project": {
+                        "months": [ "$annualSchedules.before", "$annualSchedules.jan", "$annualSchedules.mar", "$annualSchedules.oct", "$annualSchedules.nov"],
+                    }
+            	},
+            	{
+                    "$addFields": {
+                        "MM": {
+                            "$reduce": {
+                                "input": "$months.MM",
+                                "initialValue": [],
+                                "in": {
+                                    "$map": {
+                                        "input": {
+                                            "$zip": {
+                                                "inputs": ["$$this", "$$value"],
+                                                "useLongestLength": true,
+                                            }
+                                        },
+                                        "in": { "$sum": "$$this"}
+                                    }
+                                }
+                            }
+                        },
+                        "PN": {
+                            "$reduce": {
+                                "input": "$months.PN",
+                                "initialValue": [],
+                                "in": {
+                                    "$map": {
+                                        "input": {
+                                            "$zip": {
+                                                "inputs": ["$$this", "$$value"],
+                                                "useLongestLength": true,
+                                            }
+                                        },
+                                        "in": { "$sum": "$$this"}
+                                    }
+                                }
+                            }
+                        },
+                        "DD": {
+                            "$reduce": {
+                                "input": "$months.DD",
+                                "initialValue": [],
+                                "in": {
+                                    "$map": {
+                                        "input": {
+                                            "$zip": {
+                                                "inputs": ["$$this", "$$value"],
+                                                "useLongestLength": true,
+                                            }
+                                        },
+                                        "in": { "$sum": "$$this"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+            	{
+            	    "$project": {
+                        "CD": {"$sum": "$months.CD"},
+                        "MM": {$sum: "$MM"},
+                        "PN": {$sum: "$PN"},
+                        "DD": {$sum: "$DD"},
+                    }
+            	},
+            	{
+            	    $project: {
+            	        "GD": {
+            	            $add: [
+               	                "$CD",
+            	                "$MM",
+            	                "$PN",
+            	                "$DD",
+            	           ]
+            	        },
+            	   }
+            	}
+            ]
+         }
+     },
+     {
+         $project:{
+            "executed": {$sum: "$executed.GD"},
+            "schedule": {$sum: "$schedule.GD"},
+            "flag": {$multiply:[{$sum: "$schedule.GD"},0.85]},
+         }
+     },
+     {
+        $project: {
+            "value": {
+                $switch: {
+                    branches: [
+                        
+                        { case: {$eq: ["$executed","$schedule"]}, then: "PL" },
+                        
+                        { case: {
+                            $and: [
+                                {$lte: ["$executed","$schedule"] },,
+                                {$gt: ["$flag","$executed"] },
+                            ]
+                            },
+                            then: "AT"
+                        },
+                    ],
+                    default: "MA"
+                }
+            }
+        }
+    }
+])
