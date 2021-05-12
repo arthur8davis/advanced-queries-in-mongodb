@@ -1,0 +1,32 @@
+db.annualBenefits.aggregate([
+    {
+        "$match": { 
+            "idScholar": ObjectId("6094806a7d4e1561ff0c2d37"),
+            "year": 2022
+        }
+    },
+    {
+        $lookup: {
+            from: "disbursements",
+            localField: "idScholar",
+            foreignField: "idScholar",
+            as: "disbursements"
+        }
+    },
+    {
+        "$unwind": "$disbursements"
+    },
+    {
+        "$match": { 
+            "disbursements.year": 2022,
+            "disbursements.startMonth": 9
+        }
+    },
+    {
+        $project: {
+            // "_id": 0,
+            "months": ["$sep", "$oct", "$nov", "$dec"],
+            "disbursements": "$disbursements"
+        }
+    }
+])

@@ -1,0 +1,214 @@
+db.annualBenefits.aggregate([
+    {
+        "$match": {
+            "idScholar": ObjectId("609480767d4e1561ff0c2d3f"),
+            "year": 2021
+        }
+    },
+    {
+        "$project": {
+            "month": "$may",
+            "idScholar": "$idScholar",
+            "year": "$year",
+        }
+    },
+    {
+        $lookup: {
+            from: "benefits",
+            localField: "idScholar",
+            foreignField: "idScholar",
+            as: "benefits"
+        }
+    },
+    {
+        "$unwind": "$benefits"
+    },
+    {
+        "$addFields":{
+            "startYear": { $year: "$benefits.start"},
+            "endYear": { $year: "$benefits.end"},
+            "startMonth": { $month: "$benefits.start"},
+            "endMonth": { $month: "$benefits.end"},
+        }
+    },
+    { 
+        $match: { 
+            $expr: {
+                $and: [
+                    {
+                        $gte: ["$year", "$startYear"]
+                    },
+                    {
+                        $lt: ["$year", "$endYear"]
+                    },
+                    {
+                        $gte: [5, "$startMonth"]
+                    },
+                    {
+                        $lt: [5, "$endMonth"]
+                    },
+                ],
+            },
+        },
+    },
+    {
+        "$project": {
+            
+            "tuition": {
+                "$cond": {
+					"if": {
+						$eq: ["$month.tuition", true],
+					},
+					"then":"$benefits.tuition",
+					"else": 0,
+				},
+            },
+            "food": {
+                "$cond": {
+					"if": {
+						$eq: ["$month.food", true],
+					},
+					"then":"$benefits.food",
+					"else": 0,
+				},
+            },
+            "pension": {
+                "$cond": {
+					"if": {
+						$eq: ["$month.pension", true],
+					},
+					"then":"$benefits.pension",
+					"else": 0,
+				},
+            },
+            "rental": {
+                "$cond": {
+					"if": {
+						$eq: ["$month.rental", true],
+					},
+					"then":"$benefits.rental",
+					"else": 0,
+				},
+            },
+            "utilities": {
+                "$cond": {
+					"if": {
+						$eq: ["$month.utilities", true],
+					},
+					"then":"$benefits.utilities",
+					"else": 0,
+				},
+            },
+        },
+    },
+    {
+        "$project": {
+            "totalAmount": { "$sum": ["$tuition", "$food", "$rental", "$utilities", "$pension" ] },
+        }
+    }
+    
+    // {
+    //     $project: {
+    //         // "_id": 0,
+    //         "months": ["$may", "$jun", "$jul", "$jul"],
+    //         // "benefits": "$benefits"
+    //     }
+    // },
+    // {
+    //     "$unwind": "$months"
+    // },
+    // {
+    //     "$addFields": {
+    //         "tuition": {
+    //             "$size": {
+    //                 "$filter": {
+    //                     "input": "$months",
+    //                     "as": "month",
+    //                     "cond": { "$eq": [ "$$month.tuition", true]}
+    //                 }
+    //             }
+    //         },
+    //         "pension": {
+    //             "$size": {
+    //                 "$filter": {
+    //                     "input": "$months",
+    //                     "as": "month",
+    //                     "cond": { "$eq": [ "$$month.pension", true]}
+    //                 }
+    //             }
+    //         },
+    //         "rental": {
+    //             "$size": {
+    //                 "$filter": {
+    //                     "input": "$months",
+    //                     "as": "month",
+    //                     "cond": { "$eq": [ "$$month.rental", true]}
+    //                 }
+    //             }
+    //         },
+    //         "utilities": {
+    //             "$size": {
+    //                 "$filter": {
+    //                     "input": "$months",
+    //                     "as": "month",
+    //                     "cond": { "$eq": [ "$$month.utilities", true]}
+    //                 }
+    //             }
+    //         },
+    //         "food": {
+    //             "$size": {
+    //                 "$filter": {
+    //                     "input": "$months",
+    //                     "as": "month",
+    //                     "cond": { "$eq": [ "$$month.food", true]}
+    //                 }
+    //             }
+    //         },
+            
+    //     }
+    // }
+    // {
+    //     "$project": {
+    // //         "tuition": {
+    // //             "$sum": {
+    // //                 "$cond": {
+				// // 		"if": {
+				// // 			$eq: ["$months.tuition", true],
+				// // 		},
+				// // 		"then": "$benefits.tuition",
+				// // 		"else": 0,
+				// // 	},
+    // //             },
+    // //         },
+    //         "totalExpenses": { "$sum": "$prevmonths.totalExpenses" },
+    //     },
+    // },
+
+    // {
+
+    // }
+    // {
+    //     $lookup: {
+    //         from: "disbursements",
+    //         localField: "idScholar",
+    //         foreignField: "idScholar",
+    //         as: "disbursements"
+    //     }
+    // },
+    // {
+    //     "$unwind": "$disbursements"
+    // },
+    // {
+    //     "$match": { 
+    //         "disbursements.year": 2022,
+    //         "disbursements.startMonth": 9
+    //     }
+    // },
+    // {
+    //     $project: {
+    //         // "_id": 0,
+    //         "months": ["$sep", "$oct", "$nov", "$dec"],
+    //         "disbursements": "$disbursements"
+    //     }
+    // }
+])

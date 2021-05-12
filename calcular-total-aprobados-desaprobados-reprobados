@@ -1,0 +1,187 @@
+db.cycles.aggregate([
+    {
+        "$match": {
+            "_id": ObjectId("609b15bb9405ccf606db9d28"),
+        }
+    },
+    {
+        "$unwind": "$courses"
+    },
+    {
+        "$group": {
+            "_id": "$courses.status",
+            "credits": { "$sum": "$courses.credits"}
+        }
+    },
+    { $addFields: { array: [{ k: "$_id", v: "$credits"}] }},
+    { $replaceRoot: { newRoot: { $arrayToObject: "$array" }}},
+    {
+        $group:{
+            "_id": null,
+            "result": {$mergeObjects: {
+                failed: "$failed",
+                disapproved: "$disapproved",
+                passed: "$passed"
+            }},
+        }
+    },
+    {
+        $project: { 
+            _id: 0, 
+            failed: { "$ifNull": ["$result.failed", 0] }, //"$result.failed", 
+            disapproved: { "$ifNull": ["$result.disapproved",0 ]}, //"$result.disapproved",
+            passed: { "$ifNull": ["$result.passed", 0] }, //"$result.passed",
+        }
+    }
+    // {
+    //     "$project": {
+    //         "credits": {
+    //             // "$sum": {
+    //                 "$cond": {
+				// 		"if": {
+				// 			$eq: ["$courses.status", "passed"],
+				// 		},
+				// 		"then": "$courses.credits",
+				// 		"else": 0,
+				// 	},
+    //             // },
+    //         },
+    //         // "totalExpenses": { "$sum": "$prevmonths.totalExpenses" },
+    //     },
+    // },
+    // {
+    //     $project: {
+    //         "_id": 0,
+    //         "months": ["$may", "$jun", "$jul", "$jul"],
+    //     }
+    // },
+    // {
+    //     $project: {
+    //         "totalAmount": { "$sum": "$months.totalAmount" },
+    //     }
+    // },
+    // {
+    //     "$project": {
+    //         "month": "$jun",
+    //         "idScholar": "$idScholar",
+    //         "year": "$year",
+    //     }
+    // },
+    // {
+    //     $lookup: {
+    //         from: "benefits",
+    //         localField: "idScholar",
+    //         foreignField: "idScholar",
+    //         as: "benefits"
+    //     }
+    // },
+    // {
+    //     "$unwind": "$benefits"
+    // },
+
+    
+    // {
+    //     $project: {
+    //         // "_id": 0,
+    //         "months": ["$may", "$jun", "$jul", "$jul"],
+    //         // "benefits": "$benefits"
+    //     }
+    // },
+    // {
+    //     "$unwind": "$months"
+    // },
+    // {
+    //     "$addFields": {
+    //         "tuition": {
+    //             "$size": {
+    //                 "$filter": {
+    //                     "input": "$months",
+    //                     "as": "month",
+    //                     "cond": { "$eq": [ "$$month.tuition", true]}
+    //                 }
+    //             }
+    //         },
+    //         "pension": {
+    //             "$size": {
+    //                 "$filter": {
+    //                     "input": "$months",
+    //                     "as": "month",
+    //                     "cond": { "$eq": [ "$$month.pension", true]}
+    //                 }
+    //             }
+    //         },
+    //         "rental": {
+    //             "$size": {
+    //                 "$filter": {
+    //                     "input": "$months",
+    //                     "as": "month",
+    //                     "cond": { "$eq": [ "$$month.rental", true]}
+    //                 }
+    //             }
+    //         },
+    //         "utilities": {
+    //             "$size": {
+    //                 "$filter": {
+    //                     "input": "$months",
+    //                     "as": "month",
+    //                     "cond": { "$eq": [ "$$month.utilities", true]}
+    //                 }
+    //             }
+    //         },
+    //         "food": {
+    //             "$size": {
+    //                 "$filter": {
+    //                     "input": "$months",
+    //                     "as": "month",
+    //                     "cond": { "$eq": [ "$$month.food", true]}
+    //                 }
+    //             }
+    //         },
+            
+    //     }
+    // }
+    // {
+    //     "$project": {
+    // //         "tuition": {
+    // //             "$sum": {
+    // //                 "$cond": {
+				// // 		"if": {
+				// // 			$eq: ["$months.tuition", true],
+				// // 		},
+				// // 		"then": "$benefits.tuition",
+				// // 		"else": 0,
+				// // 	},
+    // //             },
+    // //         },
+    //         "totalExpenses": { "$sum": "$prevmonths.totalExpenses" },
+    //     },
+    // },
+
+    // {
+
+    // }
+    // {
+    //     $lookup: {
+    //         from: "disbursements",
+    //         localField: "idScholar",
+    //         foreignField: "idScholar",
+    //         as: "disbursements"
+    //     }
+    // },
+    // {
+    //     "$unwind": "$disbursements"
+    // },
+    // {
+    //     "$match": { 
+    //         "disbursements.year": 2022,
+    //         "disbursements.startMonth": 9
+    //     }
+    // },
+    // {
+    //     $project: {
+    //         // "_id": 0,
+    //         "months": ["$sep", "$oct", "$nov", "$dec"],
+    //         "disbursements": "$disbursements"
+    //     }
+    // }
+])
